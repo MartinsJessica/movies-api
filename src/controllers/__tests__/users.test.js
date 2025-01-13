@@ -333,12 +333,146 @@ describe('createFavoriteMovie', () => {
           })
 
           describe('and the movie was not favorited', () => {
+            const fakeRequest = {
+              params: {
+                id: 1
+              },
+              body: {
+                imdbId: 'fake-movie-imdb-id'
+              }
+            }
+
+            const fakeMovieApiResponse = {
+              Response: 'True',
+              Title: 'fake-movie-title',
+              imdbID: 'fake-movie-imdb-id',
+              Plot: 'fake-movie-plot',
+              Year: '2021',
+              Genre: 'fake-movie-genre',
+              Poster: 'fake-movie-poster',
+              Runtime: '110 min'
+            }
+
+
+            const mockJson = jest.fn()
+            const mockStatus = jest.fn(() => ({ json: mockJson }))
+            const mockResponse = {
+              status: mockStatus
+            }
+
+            const fakeError = new Error('Error creating favorite')
+
+            beforeAll(async () => {
+              database.movie.findUnique.mockResolvedValue(null)
+              axios.get.mockResolvedValue({
+                data: fakeMovieApiResponse
+              })
+
+              database.movie.create.mockResolvedValue({ id: 1, title: 'fake-movie-title' })
+
+              database.favorite.create.mockRejectedValue(fakeError)
+
+              await createFavoriteMovie(fakeRequest, mockResponse)
+            })
+
+            afterAll(() => {
+              jest.clearAllMocks()
+            })
+
+            it('should try to find the movie in the database', () => {
+              expect(database.movie.findUnique).toHaveBeenCalledWith({
+                where: {
+                  imdbId: fakeRequest.body.imdbId
+                }
+              })
+              expect(database.movie.findUnique).toHaveBeenCalledTimes(1)
+            })
+
+            it('should search imdbId in the movie API', () => {
+              expect(axios.get).toHaveBeenCalledWith(`http://www.omdbapi.com/?i=${fakeRequest.body.imdbId}&apikey=fake-api-key`)
+              expect(axios.get).toHaveBeenCalledTimes(1)
+            })
+
+            it('should create a new movie in the database', () => {
+              expect(database.movie.create).toHaveBeenCalledWith({
+                data: {
+                  description: fakeMovieApiResponse.Plot,
+                  genres: fakeMovieApiResponse.Genre,
+                  imdbId: fakeMovieApiResponse.imdbID,
+                  poster: fakeMovieApiResponse.Poster,
+                  releaseYear: Number(fakeMovieApiResponse.Year),
+                  runTime: fakeMovieApiResponse.Runtime,
+                  title: fakeMovieApiResponse.Title
+                }
+              })
+              expect(database.movie.create).toHaveBeenCalledTimes(1)
+            })
+
+            it('should try create a favorite movie', () => {
+              expect(database.favorite.create).toHaveBeenCalledWith({
+                data: {
+                  userId: fakeRequest.params.id,
+                  movieId: 1
+                }
+              })
+              expect(database.favorite.create).toHaveBeenCalledTimes(1)
+            })
+
+            it('should return an error', () => {
+              expect(console.log).toHaveBeenCalledWith(fakeError)
+              expect(mockResponse.status).toHaveBeenCalledWith(500)
+              expect(mockJson).toHaveBeenCalledWith({ error: 'Erro ao favoritar o filme!' })
+            })
 
           })
         })
 
         describe('and the movie was not located in the movie api', () => {
+          const fakeRequest = {
+            params: {
+              id: 1
+            },
+            body: {
+              imdbId: 'fake-movie-imdb-id'
+            }
+          }
+          const mockJson = jest.fn()
+          const mockStatus = jest.fn(() => ({ json: mockJson }))
+          const mockResponse = {
+            status: mockStatus
+          }
 
+          beforeAll(async () => {
+            database.movie.findUnique.mockResolvedValue(null)
+            axios.get.mockResolvedValue({
+              data: { Response: 'False' }
+            })
+
+            await createFavoriteMovie(fakeRequest, mockResponse)
+          })
+
+          afterAll(() => {
+            jest.clearAllMocks()
+          })
+
+          it('should try find movie in database', () => {
+            expect(database.movie.findUnique).toHaveBeenCalledWith({
+              where: {
+                imdbId: fakeRequest.body.imdbId
+              }
+            })
+            expect(database.movie.findUnique).toHaveBeenCalledTimes(1)
+          })
+
+          it('should try localize movie in external api', () => {
+            expect(axios.get).toHaveBeenCalledWith(`http://www.omdbapi.com/?i=${fakeRequest.body.imdbId}&apikey=fake-api-key`)
+            expect(axios.get).toHaveBeenCalledTimes(1)
+          })
+
+          it('should return an error message when the movie is not found in the API', () => {
+            expect(mockResponse.status).toHaveBeenCalledWith(404)
+            expect(mockJson).toHaveBeenCalledWith({ data: { message: 'Filme não encontrado!' } })
+          })
         })
       })
     })
